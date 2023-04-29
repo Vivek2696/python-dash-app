@@ -17,6 +17,15 @@ neo4j_db = neo_conn.session(database='academicworld')
 print('Neo4j Connected')
 
 
+# List of Universities for widget4
+university_list_query = f'''
+    SELECT DISTINCT(name) from university
+    ORDER BY name;
+    '''
+university_list = pd.read_sql(university_list_query, mysql_conn)
+print(university_list.head(10))
+
+
 app.layout = dbc.Container(
     [
         html.Br(),
