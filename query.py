@@ -1,6 +1,13 @@
 import pymongo
 
 
+def get_university_list_query():
+    return f'''
+    SELECT DISTINCT(name) from university
+    ORDER BY name;
+    '''
+
+
 def get_widget1_query(limit):
     return f'''
         MATCH(university:INSTITUTE)<-[:AFFILIATION_WITH]-(faculty:FACULTY)-[:INTERESTED_IN]->(keyword:KEYWORD) 

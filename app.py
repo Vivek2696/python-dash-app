@@ -14,11 +14,7 @@ mongo_conn = mongodb_utils.MongoDbConnection()
 neo_conn = neo4j_utils.Neo4jDatabase()
 
 # List of Universities for widget4
-university_list_query = f'''
-    SELECT DISTINCT(name) from university
-    ORDER BY name;
-    '''
-university_list = mysql_conn.execute(university_list_query)
+university_list = mysql_conn.execute(query.get_university_list_query())
 
 app.layout = dbc.Container(
     [
@@ -231,11 +227,11 @@ def update_widget4_graph(value):
 # Widget5 Controls
 @callback(
     Output(component_id="widget5-graph", component_property="figure"),
-    Input(component_id="widget5-tabs", component_property="active_tab"),
     Input(component_id="widget5-button", component_property="n_clicks"),
-    Input(component_id="widget5-input", component_property="value")
+    Input(component_id="widget5-tabs", component_property="active_tab"),
+    State(component_id="widget5-input", component_property="value")
 )
-def switch_tabs(at, n_clicks, value):
+def switch_tabs(n_clicks, at, value):
     if at == "widget5-tab-1":
         widget5_faculty_data = mongo_conn.execute_faculty(query.get_widget5_faculty_query(value))
         return px.line(widget5_faculty_data,
