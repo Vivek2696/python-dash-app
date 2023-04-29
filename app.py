@@ -16,15 +16,12 @@ neo_conn = neo4j.GraphDatabase.driver("bolt://localhost:7687", auth=('root', 'Vi
 neo4j_db = neo_conn.session(database='academicworld')
 print('Neo4j Connected')
 
-
 # List of Universities for widget4
 university_list_query = f'''
     SELECT DISTINCT(name) from university
     ORDER BY name;
     '''
 university_list = pd.read_sql(university_list_query, mysql_conn)
-print(university_list.head(10))
-
 
 app.layout = dbc.Container(
     [
@@ -53,7 +50,7 @@ app.layout = dbc.Container(
                 # Widget2
                 dbc.Col(
                     dbc.Container([
-                        dbc.Row(html.Div("Top 10 Faculties' Keyword-Relevant Citation", className="text-center h4")),
+                        dbc.Row(html.Div("Top 10 Faculties by Keyword-Relevant Citation", className="text-center h4")),
                         dbc.Row([
                             dbc.Col(dbc.Input(id="widget2-input",
                                               type="text",
@@ -102,6 +99,31 @@ app.layout = dbc.Container(
             ],
             align='center'
         ),
+        dbc.Row(html.Br()),
+        dbc.Row(html.Br()),
+        dbc.Row([
+            # Widget 4
+            dbc.Col(dbc.Container([
+                dbc.Row(html.Div("Keywords By University", className="text-center h4")),
+                dbc.Row(html.Br()),
+                dbc.Row(dcc.Dropdown(id="widget4-dropdown",
+                                     options=university_list['name'],
+                                     value=university_list['name'].iloc[71])),
+                dbc.Row(html.Br()),
+                dbc.Row([
+                    dbc.Col(dbc.Container([
+                        dbc.Label(id='widget4-label', className='text-center h4'),
+                        dbc.Card([dbc.CardImg(top=True,
+                                              id='widget4-card-image',
+                                              style={"max-height": "20rem"})],)
+                    ]), width=6, align="center"),
+                    dbc.Col(dbc.Container([
+                        html.Div("Top Keywords for selected University", className="text-center h6"),
+                        dcc.Graph(figure={}, id='widget4-pie-graph')
+                    ]))
+                ])
+            ]))
+        ]),
         html.Br(),
         html.Hr(),
         html.Div(
@@ -171,6 +193,62 @@ def update_widget3(n_clicks, value):
                       y='score',
                       color='Publications',
                       title='Scatter plot of score vs number of citations')
+
+
+# Widget 4 control 1
+@callback(
+    Output(component_id='widget4-card-image', component_property='src'),
+    Input(component_id='widget4-dropdown', component_property='value')
+)
+def update_widget4_img(value):
+    widget4_img_query = f'''
+        SELECT photo_url FROM university
+        WHERE name = '{value}';
+        '''
+    widget4_img_url = pd.read_sql(widget4_img_query, mysql_conn)
+    return widget4_img_url['photo_url'].iloc[0]
+
+
+# Widget4 control 2
+@callback(
+    Output(component_id='widget4-label', component_property='children'),
+    Input(component_id='widget4-dropdown', component_property='value')
+)
+def update_widget4_count(value):
+    widget4_count_query = mongo_db.faculty.aggregate(
+        [
+            {"$unwind": "$keywords"},
+            {"$group": {"_id": "$affiliation.name", "keywords": {"$addToSet": "$keywords.name"}}},
+            {"$unwind": "$keywords"},
+            {"$group": {"_id": "$_id", "num_of_keywords": {"$sum": 1}}},
+            {"$match": {"_id": value}}
+        ]
+    )
+    widget4_count_data = pd.DataFrame(list(widget4_count_query))
+    count = widget4_count_data['num_of_keywords'].iloc[0]
+    return f'Total Keywords found: {count}'
+
+# Widget4 control 3
+@callback(
+    Output(component_id='widget4-pie-graph', component_property='figure'),
+    Input(component_id='widget4-dropdown', component_property='value')
+)
+def update_widget4_graph(value):
+    widget4_graph_query = mongo_db.faculty.aggregate(
+        [
+            {"$unwind": "$keywords"},
+            {"$match": {"affiliation.name": value}},
+            {"$group": {"_id": "$keywords.name", "num_of_keywords": {"$sum": 1}}},
+            {"$sort": {"num_of_keywords": pymongo.DESCENDING}},
+            {"$limit": 10},
+            {"$project": {"_id": 0, "Keywords": "$_id", "Keyword_Occurrences": "$num_of_keywords"}}
+        ]
+    )
+    widget4_graph_data = pd.DataFrame(list(widget4_graph_query))
+    return px.pie(widget4_graph_data,
+                  names=widget4_graph_data['Keywords'],
+                  values=widget4_graph_data['Keyword_Occurrences'],
+                  hole=0.3)
 
 
 if __name__ == '__main__':
