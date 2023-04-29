@@ -6,6 +6,7 @@ import pymongo
 import mysql_utils
 import mongodb_utils
 import neo4j_utils
+import query
 
 app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 mysql_conn = mysql_utils.MySqlDatabase()
@@ -120,10 +121,39 @@ app.layout = dbc.Container(
                 ])
             ]))
         ]),
+        dbc.Row(html.Br()),
+        dbc.Row([
+            # Widget5
+            dbc.Col(dbc.Container([
+                dbc.Row(html.Div("Keywords performance over time", className='text-center h4')),
+                dbc.Row(html.Br()),
+                dbc.Row([
+                    dbc.Col(dbc.Input(id="widget5-input",
+                                      type="text",
+                                      value="data mining",
+                                      placeholder="Enter a Keyword"), width=6),
+                    dbc.Col(dbc.Button("Search By Keywords",
+                                       id="widget5-button",
+                                       color="primary",
+                                       className="me-1",
+                                       n_clicks=0), width=6, align="center")
+                ], align="center"),
+                dbc.Row(html.Br()),
+                dbc.Tabs(
+                    [
+                        dbc.Tab(label="By Faculty", tab_id="widget5-tab-1", tab_style={"width": "50%"}),
+                        dbc.Tab(label="By Publication", tab_id="widget5-tab-2", tab_style={"width": "50%"})
+                    ],
+                    id="widget5-tabs",
+                    active_tab="widget5-tab-1"
+                ),
+                dbc.Row(dcc.Graph(figure={}, id="widget5-graph"), align="center")
+            ]))
+        ]),
         html.Br(),
         html.Hr(),
         html.Div(
-            html.Small(u"\u00A9" + ' CS411 Database System Final Project by vivekdp2'),
+            html.Small(u"\u00A9" + ' CS411 Final Project by vivekdp2'),
             className="text-center")
     ]
 )
@@ -135,12 +165,7 @@ app.layout = dbc.Container(
     Input(component_id='widget1-slider', component_property='value')
 )
 def update_widget1(limit):
-    widget1_query = f'''
-        MATCH(university:INSTITUTE)<-[:AFFILIATION_WITH]-(faculty:FACULTY)-[:INTERESTED_IN]->(keyword:KEYWORD) 
-        RETURN keyword.name AS Keywords, COUNT(DISTINCT(university))
-        AS Universities_Participated ORDER BY Universities_Participated DESC LIMIT {limit};
-        '''
-    widget1_data = neo_conn.execute(widget1_query)
+    widget1_data = neo_conn.execute(query.get_widget1_query(limit))
     return px.bar(widget1_data, x='Keywords', y='Universities_Participated')
 
 
@@ -151,17 +176,7 @@ def update_widget1(limit):
     State(component_id='widget2-input', component_property='value')
 )
 def update_widget2(n_clicks, value):
-    widget2_query = f'''
-            SELECT F.name as Faculty, SUM(PK.score * P.num_citations) AS 'KRC_Score' FROM faculty_publication FP JOIN
-            faculty F ON FP.faculty_id = F.id JOIN
-            publication P ON FP.publication_id = P.id JOIN
-            publication_keyword PK ON PK.publication_id = P.id JOIN
-            keyword K ON PK.keyword_id = K.id
-            WHERE K.name = '{value}'
-            GROUP BY F.name
-            ORDER BY SUM(PK.score * P.num_citations) DESC LIMIT 10;
-            '''
-    widget2_data = mysql_conn.execute(widget2_query)
+    widget2_data = mysql_conn.execute(query.get_widget2_query(value))
     return widget2_data.to_dict('records')
 
 
@@ -172,16 +187,7 @@ def update_widget2(n_clicks, value):
     State(component_id='widget3-input', component_property='value')
 )
 def update_widget3(n_clicks, value):
-    widget3_query_pipeline = [
-        {"$unwind": "$keywords"},
-        {"$match": {"keywords.name": value}},
-        {"$sort": {"numCitations": pymongo.DESCENDING}},
-        {"$limit": 10},
-        {"$project": {"_id": 0, "Publications": "$title", "score": "$keywords.score",
-                      "num_citations": "$numCitations"}}
-    ]
-
-    widget3_data = mongo_conn.execute_publication(widget3_query_pipeline)
+    widget3_data = mongo_conn.execute_publication(query.get_widget3_query_pipeline(value))
     return px.scatter(widget3_data,
                       x='num_citations',
                       y='score',
@@ -195,11 +201,7 @@ def update_widget3(n_clicks, value):
     Input(component_id='widget4-dropdown', component_property='value')
 )
 def update_widget4_img(value):
-    widget4_img_query = f'''
-        SELECT photo_url FROM university
-        WHERE name = '{value}';
-        '''
-    widget4_img_url = mysql_conn.execute(widget4_img_query)
+    widget4_img_url = mysql_conn.execute(query.get_widget4_img_query(value))
     return widget4_img_url['photo_url'].iloc[0]
 
 
@@ -209,14 +211,7 @@ def update_widget4_img(value):
     Input(component_id='widget4-dropdown', component_property='value')
 )
 def update_widget4_count(value):
-    widget4_count_query_pipeline = [
-        {"$unwind": "$keywords"},
-        {"$group": {"_id": "$affiliation.name", "keywords": {"$addToSet": "$keywords.name"}}},
-        {"$unwind": "$keywords"},
-        {"$group": {"_id": "$_id", "num_of_keywords": {"$sum": 1}}},
-        {"$match": {"_id": value}}
-    ]
-    widget4_count_data = mongo_conn.execute_faculty(widget4_count_query_pipeline)
+    widget4_count_data = mongo_conn.execute_faculty(query.get_widget4_count_pipeline(value))
     count = widget4_count_data['num_of_keywords'].iloc[0]
     return f'Total Keywords found: {count}'
 
@@ -226,19 +221,33 @@ def update_widget4_count(value):
     Input(component_id='widget4-dropdown', component_property='value')
 )
 def update_widget4_graph(value):
-    widget4_graph_query_pipeline = [
-        {"$unwind": "$keywords"},
-        {"$match": {"affiliation.name": value}},
-        {"$group": {"_id": "$keywords.name", "num_of_keywords": {"$sum": 1}}},
-        {"$sort": {"num_of_keywords": pymongo.DESCENDING}},
-        {"$limit": 10},
-        {"$project": {"_id": 0, "Keywords": "$_id", "Keyword_Occurrences": "$num_of_keywords"}}
-    ]
-    widget4_graph_data = mongo_conn.execute_faculty(widget4_graph_query_pipeline)
+    widget4_graph_data = mongo_conn.execute_faculty(query.get_widget4_graph_pipeline(value))
     return px.pie(widget4_graph_data,
                   names=widget4_graph_data['Keywords'],
                   values=widget4_graph_data['Keyword_Occurrences'],
                   hole=0.3)
+
+
+# Widget5 Controls
+@callback(
+    Output(component_id="widget5-graph", component_property="figure"),
+    Input(component_id="widget5-tabs", component_property="active_tab"),
+    Input(component_id="widget5-button", component_property="n_clicks"),
+    Input(component_id="widget5-input", component_property="value")
+)
+def switch_tabs(at, n_clicks, value):
+    if at == "widget5-tab-1":
+        widget5_faculty_data = mongo_conn.execute_faculty(query.get_widget5_faculty_query(value))
+        return px.line(widget5_faculty_data,
+                       x="Year",
+                       y="Faculties_Contributed",
+                       markers=True)
+    elif at == "widget5-tab-2":
+        widget5_publication_data = mysql_conn.execute(query.get_widget5_publication_query(value))
+        return px.line(widget5_publication_data,
+                       x="Year",
+                       y="Publications_Published",
+                       markers=True)
 
 
 if __name__ == '__main__':
