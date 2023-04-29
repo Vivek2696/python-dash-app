@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/CS411_final_project.iml" filepath="$PROJECT_DIR$/.idea/CS411_final_project.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/python-dash-app.iml" filepath="$PROJECT_DIR$/.idea/python-dash-app.iml" />
     </modules>
   </component>
 </project>
