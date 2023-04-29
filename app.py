@@ -2,26 +2,22 @@ from dash import Dash, html, dash_table, dcc, callback, Output, Input, State
 import dash_bootstrap_components as dbc
 import pandas as pd
 import plotly.express as px
-import sqlalchemy
 import pymongo
-import neo4j
+import mysql_utils
+import mongodb_utils
+import neo4j_utils
 
 app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
-mysql_conn = sqlalchemy.create_engine('mysql+pymysql://root:Viraj0458@localhost:3306/academicworld')
-print('SQL Connected')
-mongo_conn = pymongo.MongoClient('mongodb://localhost:27017')
-mongo_db = mongo_conn.academicworld
-print('Mongo Connected')
-neo_conn = neo4j.GraphDatabase.driver("bolt://localhost:7687", auth=('root', 'Viraj0458'))
-neo4j_db = neo_conn.session(database='academicworld')
-print('Neo4j Connected')
+mysql_conn = mysql_utils.MySqlDatabase()
+mongo_conn = mongodb_utils.MongoDbConnection()
+neo_conn = neo4j_utils.Neo4jDatabase()
 
 # List of Universities for widget4
 university_list_query = f'''
     SELECT DISTINCT(name) from university
     ORDER BY name;
     '''
-university_list = pd.read_sql(university_list_query, mysql_conn)
+university_list = mysql_conn.execute(university_list_query)
 
 app.layout = dbc.Container(
     [
@@ -144,7 +140,7 @@ def update_widget1(limit):
         RETURN keyword.name AS Keywords, COUNT(DISTINCT(university))
         AS Universities_Participated ORDER BY Universities_Participated DESC LIMIT {limit};
         '''
-    widget1_data = pd.DataFrame(neo4j_db.run(widget1_query).data())
+    widget1_data = neo_conn.execute(widget1_query)
     return px.bar(widget1_data, x='Keywords', y='Universities_Participated')
 
 
@@ -165,7 +161,7 @@ def update_widget2(n_clicks, value):
             GROUP BY F.name
             ORDER BY SUM(PK.score * P.num_citations) DESC LIMIT 10;
             '''
-    widget2_data = pd.read_sql(widget2_query, mysql_conn)
+    widget2_data = mysql_conn.execute(widget2_query)
     return widget2_data.to_dict('records')
 
 
@@ -176,18 +172,16 @@ def update_widget2(n_clicks, value):
     State(component_id='widget3-input', component_property='value')
 )
 def update_widget3(n_clicks, value):
-    widget3_query = mongo_db.publications.aggregate(
-        [
-            {"$unwind": "$keywords"},
-            {"$match": {"keywords.name": value}},
-            {"$sort": {"numCitations": pymongo.DESCENDING}},
-            {"$limit": 10},
-            {"$project": {"_id": 0, "Publications": "$title", "score": "$keywords.score",
-                          "num_citations": "$numCitations"}}
-        ]
-    )
+    widget3_query_pipeline = [
+        {"$unwind": "$keywords"},
+        {"$match": {"keywords.name": value}},
+        {"$sort": {"numCitations": pymongo.DESCENDING}},
+        {"$limit": 10},
+        {"$project": {"_id": 0, "Publications": "$title", "score": "$keywords.score",
+                      "num_citations": "$numCitations"}}
+    ]
 
-    widget3_data = pd.DataFrame(list(widget3_query))
+    widget3_data = mongo_conn.execute_publication(widget3_query_pipeline)
     return px.scatter(widget3_data,
                       x='num_citations',
                       y='score',
@@ -205,7 +199,7 @@ def update_widget4_img(value):
         SELECT photo_url FROM university
         WHERE name = '{value}';
         '''
-    widget4_img_url = pd.read_sql(widget4_img_query, mysql_conn)
+    widget4_img_url = mysql_conn.execute(widget4_img_query)
     return widget4_img_url['photo_url'].iloc[0]
 
 
@@ -215,16 +209,14 @@ def update_widget4_img(value):
     Input(component_id='widget4-dropdown', component_property='value')
 )
 def update_widget4_count(value):
-    widget4_count_query = mongo_db.faculty.aggregate(
-        [
-            {"$unwind": "$keywords"},
-            {"$group": {"_id": "$affiliation.name", "keywords": {"$addToSet": "$keywords.name"}}},
-            {"$unwind": "$keywords"},
-            {"$group": {"_id": "$_id", "num_of_keywords": {"$sum": 1}}},
-            {"$match": {"_id": value}}
-        ]
-    )
-    widget4_count_data = pd.DataFrame(list(widget4_count_query))
+    widget4_count_query_pipeline = [
+        {"$unwind": "$keywords"},
+        {"$group": {"_id": "$affiliation.name", "keywords": {"$addToSet": "$keywords.name"}}},
+        {"$unwind": "$keywords"},
+        {"$group": {"_id": "$_id", "num_of_keywords": {"$sum": 1}}},
+        {"$match": {"_id": value}}
+    ]
+    widget4_count_data = mongo_conn.execute_faculty(widget4_count_query_pipeline)
     count = widget4_count_data['num_of_keywords'].iloc[0]
     return f'Total Keywords found: {count}'
 
@@ -234,17 +226,15 @@ def update_widget4_count(value):
     Input(component_id='widget4-dropdown', component_property='value')
 )
 def update_widget4_graph(value):
-    widget4_graph_query = mongo_db.faculty.aggregate(
-        [
-            {"$unwind": "$keywords"},
-            {"$match": {"affiliation.name": value}},
-            {"$group": {"_id": "$keywords.name", "num_of_keywords": {"$sum": 1}}},
-            {"$sort": {"num_of_keywords": pymongo.DESCENDING}},
-            {"$limit": 10},
-            {"$project": {"_id": 0, "Keywords": "$_id", "Keyword_Occurrences": "$num_of_keywords"}}
-        ]
-    )
-    widget4_graph_data = pd.DataFrame(list(widget4_graph_query))
+    widget4_graph_query_pipeline = [
+        {"$unwind": "$keywords"},
+        {"$match": {"affiliation.name": value}},
+        {"$group": {"_id": "$keywords.name", "num_of_keywords": {"$sum": 1}}},
+        {"$sort": {"num_of_keywords": pymongo.DESCENDING}},
+        {"$limit": 10},
+        {"$project": {"_id": 0, "Keywords": "$_id", "Keyword_Occurrences": "$num_of_keywords"}}
+    ]
+    widget4_graph_data = mongo_conn.execute_faculty(widget4_graph_query_pipeline)
     return px.pie(widget4_graph_data,
                   names=widget4_graph_data['Keywords'],
                   values=widget4_graph_data['Keyword_Occurrences'],
@@ -255,6 +245,6 @@ if __name__ == '__main__':
     app.run_server(debug=True)
 
     # Close all connections
-    mysql_conn.dispose()
+    mysql_conn.close()
     mongo_conn.close()
     neo_conn.close()
