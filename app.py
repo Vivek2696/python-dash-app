@@ -1,6 +1,8 @@
-from dash import Dash, html, dash_table, dcc, callback, Output, Input, State
+from dash import Dash, html, dash_table, dcc, callback, Output, Input, State, ctx
 import dash_bootstrap_components as dbc
 import plotly.express as px
+from dash.exceptions import PreventUpdate
+
 import mysql_utils
 import mongodb_utils
 import neo4j_utils
@@ -23,7 +25,7 @@ mysql_conn.execute_statement(query.create_delete_keyword_procedure())
 university_list = mysql_conn.execute(query.get_university_list_query())
 
 # List of Favourite keywords
-fav_keywords = mysql_conn.execute(query.get_widget6_fav_keyword_query())
+fav_keywords = mysql_conn.execute(query.get_fav_keyword_query())
 
 app.layout = dbc.Container(
     [
@@ -164,7 +166,7 @@ app.layout = dbc.Container(
                 dbc.Row([
                     dbc.Col(dbc.Input(id="widget6-input",
                                       type="text",
-                                      value="data science",
+                                      value="",
                                       placeholder="Enter a Keyword"), width=8),
                     dbc.Col(dbc.Button("Add",
                                        id="widget6-button",
@@ -179,7 +181,20 @@ app.layout = dbc.Container(
                                              style_table={
                                                  'overflowX': 'scroll'
                                              }))
-            ]), width=6)
+            ]), width=6),
+            dbc.Col(dbc.Container([
+                html.Div("Manage your Favourite Keywords", className='text-center h4'),
+                dbc.Row(html.Br()),
+                dbc.Row([
+                    dbc.Col(dcc.Dropdown(id="widget7-dropdown",
+                                         options=fav_keywords['keyword']), width=8),
+                    dbc.Col(dbc.Button("Delete",
+                                       id="widget7-button",
+                                       color="primary",
+                                       className="me-1",
+                                       n_clicks=0), width=3, align="center")
+                ])
+            ]))
         ]),
         html.Br(),
         html.Hr(),
@@ -282,17 +297,27 @@ def switch_tabs(n_clicks, at, value):
                        markers=True)
 
 
-# Widget6 add controls
+# Widget6 and Widget7 add/delete controls
 @callback(
     Output(component_id='widget6-table', component_property='data'),
+    Output(component_id='widget7-dropdown', component_property='options'),
     Input(component_id='widget6-button', component_property='n_clicks'),
-    State(component_id='widget6-input', component_property='value')
+    Input(component_id='widget7-button', component_property='n_clicks'),
+    State(component_id='widget6-input', component_property='value'),
+    State(component_id='widget7-dropdown', component_property='value')
 )
-def update_widget6_data(n_clicks, value):
-    mysql_conn.execute_statement(f'''CALL academicworld.add_keyword('{value}');''')
-    mysql_conn.commit_transaction()
-    widget6_table_data = mysql_conn.execute(query.get_widget6_fav_keyword_query())
-    return widget6_table_data.to_dict('records')
+def update_widget6_data(btn1, btn2, value1, value2):
+    if ctx.triggered_id == 'widget6-button':
+        mysql_conn.execute_statement(f'''CALL academicworld.add_keyword('{value1}');''')
+        mysql_conn.commit_transaction()
+        fav_keywords_list = mysql_conn.execute(query.get_fav_keyword_query())
+        return [fav_keywords_list.to_dict('records'), fav_keywords_list['keyword']]
+    elif ctx.triggered_id == 'widget7-button':
+        mysql_conn.execute_statement(f'''CALL academicworld.delete_keyword('{value2}');''')
+        mysql_conn.commit_transaction()
+        fav_keywords_list = mysql_conn.execute(query.get_fav_keyword_query())
+        return [fav_keywords_list.to_dict('records'), fav_keywords_list['keyword']]
+    raise PreventUpdate
 
 
 if __name__ == '__main__':

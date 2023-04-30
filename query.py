@@ -95,10 +95,11 @@ def get_widget5_faculty_query(value):
     ]
 
 
-def get_widget6_fav_keyword_query():
+def get_fav_keyword_query():
     return '''
     SELECT * FROM favourite_keyword;
     '''
+
 
 def drop_fav_keyword_table():
     return '''
