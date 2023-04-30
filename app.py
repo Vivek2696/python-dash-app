@@ -1,8 +1,6 @@
 from dash import Dash, html, dash_table, dcc, callback, Output, Input, State
 import dash_bootstrap_components as dbc
-import pandas as pd
 import plotly.express as px
-import pymongo
 import mysql_utils
 import mongodb_utils
 import neo4j_utils
@@ -13,8 +11,19 @@ mysql_conn = mysql_utils.MySqlDatabase()
 mongo_conn = mongodb_utils.MongoDbConnection()
 neo_conn = neo4j_utils.Neo4jDatabase()
 
+# Resources for last widget
+mysql_conn.execute_statement(query.drop_fav_keyword_table())
+mysql_conn.execute_statement(query.create_fav_keyword_table())
+mysql_conn.execute_statement(query.drop_add_keyword_procedure())
+mysql_conn.execute_statement(query.create_add_keyword_procedure())
+mysql_conn.execute_statement(query.drop_delete_keyword_procedure())
+mysql_conn.execute_statement(query.create_delete_keyword_procedure())
+
 # List of Universities for widget4
 university_list = mysql_conn.execute(query.get_university_list_query())
+
+# List of Favourite keywords
+fav_keywords = mysql_conn.execute(query.get_widget6_fav_keyword_query())
 
 app.layout = dbc.Container(
     [
@@ -79,12 +88,12 @@ app.layout = dbc.Container(
                         dbc.Col(dbc.Input(id="widget3-input",
                                           type="text",
                                           value="data mining",
-                                          placeholder="Enter Keyword"), width=6),
+                                          placeholder="Enter Keyword"), width=8),
                         dbc.Col(dbc.Button("Search By Keywords",
                                            id="widget3-button",
                                            color="primary",
                                            className="me-1",
-                                           n_clicks=0), width=6, align="center"),
+                                           n_clicks=0), width=3, align="center"),
                     ], align="center"),
                     dbc.Row(html.Br()),
                     dbc.Row(dcc.Graph(figure={}, id="widget3-graph"))
@@ -126,13 +135,13 @@ app.layout = dbc.Container(
                 dbc.Row([
                     dbc.Col(dbc.Input(id="widget5-input",
                                       type="text",
-                                      value="data mining",
-                                      placeholder="Enter a Keyword"), width=6),
+                                      value="machine learning",
+                                      placeholder="Enter a Keyword"), width=8),
                     dbc.Col(dbc.Button("Search By Keywords",
                                        id="widget5-button",
                                        color="primary",
                                        className="me-1",
-                                       n_clicks=0), width=6, align="center")
+                                       n_clicks=0), width=3, align="center")
                 ], align="center"),
                 dbc.Row(html.Br()),
                 dbc.Tabs(
@@ -145,6 +154,32 @@ app.layout = dbc.Container(
                 ),
                 dbc.Row(dcc.Graph(figure={}, id="widget5-graph"), align="center")
             ]))
+        ]),
+        dbc.Row(html.Br()),
+        dbc.Row([
+            # Widget 6 Add keyword
+            dbc.Col(dbc.Container([
+                html.Div("Your Favourite Keywords", className='text-center h4'),
+                dbc.Row(html.Br()),
+                dbc.Row([
+                    dbc.Col(dbc.Input(id="widget6-input",
+                                      type="text",
+                                      value="data science",
+                                      placeholder="Enter a Keyword"), width=8),
+                    dbc.Col(dbc.Button("Add",
+                                       id="widget6-button",
+                                       color="primary",
+                                       className="me-1",
+                                       n_clicks=0), width=3, align="center")
+                ], align="center"),
+                dbc.Row(html.Br()),
+                dbc.Row(dash_table.DataTable(id="widget6-table",
+                                             data=fav_keywords.to_dict('records'),
+                                             page_size=5,
+                                             style_table={
+                                                 'overflowX': 'scroll'
+                                             }))
+            ]), width=6)
         ]),
         html.Br(),
         html.Hr(),
@@ -176,7 +211,7 @@ def update_widget2(n_clicks, value):
     return widget2_data.to_dict('records')
 
 
-# Widget3 Controls
+# Widget 3 Controls
 @callback(
     Output(component_id='widget3-graph', component_property='figure'),
     Input(component_id='widget3-button', component_property='n_clicks'),
@@ -211,6 +246,7 @@ def update_widget4_count(value):
     count = widget4_count_data['num_of_keywords'].iloc[0]
     return f'Total Keywords found: {count}'
 
+
 # Widget4 control 3
 @callback(
     Output(component_id='widget4-pie-graph', component_property='figure'),
@@ -239,11 +275,24 @@ def switch_tabs(n_clicks, at, value):
                        y="Faculties_Contributed",
                        markers=True)
     elif at == "widget5-tab-2":
-        widget5_publication_data = mysql_conn.execute(query.get_widget5_publication_query(value))
+        widget5_publication_data = neo_conn.execute(query.get_widget5_publication_query(value))
         return px.line(widget5_publication_data,
                        x="Year",
                        y="Publications_Published",
                        markers=True)
+
+
+# Widget6 add controls
+@callback(
+    Output(component_id='widget6-table', component_property='data'),
+    Input(component_id='widget6-button', component_property='n_clicks'),
+    State(component_id='widget6-input', component_property='value')
+)
+def update_widget6_data(n_clicks, value):
+    mysql_conn.execute_statement(f'''CALL academicworld.add_keyword('{value}');''')
+    mysql_conn.commit_transaction()
+    widget6_table_data = mysql_conn.execute(query.get_widget6_fav_keyword_query())
+    return widget6_table_data.to_dict('records')
 
 
 if __name__ == '__main__':

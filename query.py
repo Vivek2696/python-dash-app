@@ -70,12 +70,10 @@ def get_widget4_graph_pipeline(value):
 
 def get_widget5_publication_query(value):
     return f'''
-        SELECT p.year as Year, COUNT(DISTINCT(p.id)) AS Publications_Published FROM publication_keyword AS pk
-        JOIN keyword AS k ON pk.keyword_id = k.id
-        JOIN publication AS p ON pk.publication_id = p.id
-        WHERE k.name = "{value}"
-        GROUP BY p.year
-        ORDER BY year;
+        MATCH(p:PUBLICATION)-[:LABEL_BY]->(k:KEYWORD) 
+        WHERE k.name = '{value}' 
+        RETURN p.year as Year, COUNT(DISTINCT(p.id)) as Publications_Published 
+        ORDER BY Year;
         '''
 
 
@@ -92,6 +90,51 @@ def get_widget5_faculty_query(value):
         {"$unwind": "$result"},
         {"$group": {"_id": "$result.year", "num_faculties": {"$sum": 1}}},
         {"$sort": {"_id": pymongo.ASCENDING}},
+        {"$match": {"_id": {"$gt": 0}}},
         {"$project": {"_id": 0, "Year": "$_id", "Faculties_Contributed": "$num_faculties"}}
     ]
 
+
+def get_widget6_fav_keyword_query():
+    return '''
+    SELECT * FROM favourite_keyword;
+    '''
+
+def drop_fav_keyword_table():
+    return '''
+    DROP TABLE IF EXISTS `favourite_keyword`;
+    '''
+
+
+def create_fav_keyword_table():
+    return f'''
+        CREATE TABLE `favourite_keyword`(`keyword` VARCHAR(255) UNIQUE NOT NULL,INDEX(`keyword`));
+        '''
+
+
+def drop_add_keyword_procedure():
+    return '''
+    DROP PROCEDURE IF EXISTS add_keyword;
+    '''
+
+
+def create_add_keyword_procedure():
+    return f'''
+    CREATE PROCEDURE add_keyword(IN input CHAR(255))
+    INSERT INTO `AcademicWorld`.`favourite_keyword` (`keyword`)
+    VALUES (input);
+    '''
+
+
+def drop_delete_keyword_procedure():
+    return '''
+    DROP PROCEDURE IF EXISTS delete_keyword;
+    '''
+
+
+def create_delete_keyword_procedure():
+    return f'''
+    CREATE PROCEDURE delete_keyword(IN input CHAR(255))
+    DELETE FROM `AcademicWorld`.`favourite_keyword`
+    WHERE `keyword` = input;
+    '''
